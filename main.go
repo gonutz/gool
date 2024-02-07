@@ -31,6 +31,8 @@ const (
 	newButtonID
 	startButtonID
 	startButtonShortcutID
+	largerFontShortcutID
+	smallerFontShortcutID
 	programTimerID
 )
 
@@ -38,6 +40,8 @@ const (
 	programStartMessage = w32.WM_USER + iota
 	programStopMessage
 )
+
+var fontSize int32 = 17
 
 func run() error {
 	runtime.LockOSThread()
@@ -111,36 +115,6 @@ func run() error {
 	}
 	defer w32.UnregisterClass(w32.StringAtom(class), 0)
 
-	tahomaDesc := w32.LOGFONT{
-		Height:         -17,
-		Weight:         w32.FW_NORMAL,
-		CharSet:        w32.DEFAULT_CHARSET,
-		OutPrecision:   w32.OUT_CHARACTER_PRECIS,
-		ClipPrecision:  w32.CLIP_CHARACTER_PRECIS,
-		Quality:        w32.DEFAULT_QUALITY,
-		PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
-	}
-	w32.SetString(tahomaDesc.FaceName[:], "Tahoma")
-	tahoma, err := w32.CreateFontIndirect(&tahomaDesc)
-	if err != nil {
-		return err
-	}
-
-	codeFontDesc := w32.LOGFONT{
-		Height:         -17,
-		Weight:         w32.FW_NORMAL,
-		CharSet:        w32.DEFAULT_CHARSET,
-		OutPrecision:   w32.OUT_CHARACTER_PRECIS,
-		ClipPrecision:  w32.CLIP_CHARACTER_PRECIS,
-		Quality:        w32.DEFAULT_QUALITY,
-		PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
-	}
-	w32.SetString(codeFontDesc.FaceName[:], "Courier New")
-	codeFont, err := w32.CreateFontIndirect(&codeFontDesc)
-	if err != nil {
-		return err
-	}
-
 	window, err := w32.CreateWindowEx(
 		w32.WS_EX_LAYERED|w32.WS_EX_COMPOSITED,
 		w32.StringAtom(class),
@@ -166,7 +140,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
 
 	projects, err := w32.CreateWindowEx(
 		0,
@@ -180,7 +153,6 @@ func run() error {
 		0,
 		nil,
 	)
-	w32.SendMessage(projects, w32.WM_SETFONT, uintptr(tahoma), 1)
 
 	newButton, err := w32.CreateWindowEx(
 		0,
@@ -194,7 +166,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(tahoma), 1)
 
 	startButton, err := w32.CreateWindowEx(
 		0,
@@ -208,7 +179,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(tahoma), 1)
 
 	codeCaption, err := w32.CreateWindowEx(
 		0,
@@ -222,7 +192,6 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
 
 	helloWordCode := strings.ReplaceAll(strings.TrimSpace(`
 package main
@@ -247,7 +216,6 @@ func main() {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(codeEdit, w32.WM_SETFONT, uintptr(codeFont), 1)
 	tabWidth := 4 * 4
 	w32.SendMessage(codeEdit, w32.EM_SETTABSTOPS, 1, uintptr(unsafe.Pointer(&tabWidth)))
 	w32.SetFocus(codeEdit)
@@ -265,7 +233,6 @@ func main() {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(consoleOutput, w32.WM_SETFONT, uintptr(codeFont), 1)
 
 	consoleInput, err := w32.CreateWindowEx(
 		w32.WS_EX_CLIENTEDGE,
@@ -279,9 +246,14 @@ func main() {
 	if err != nil {
 		return err
 	}
-	w32.SendMessage(consoleInput, w32.WM_SETFONT, uintptr(codeFont), 1)
 
-	resize := func(width, height int) {
+	layoutControls := func() {
+		r, err := w32.GetClientRect(window)
+		if err != nil {
+			return
+		}
+		width, height := int(r.Right-r.Left), int(r.Bottom-r.Top)
+
 		setPos := func(window w32.HWND, x, y, width, height int) {
 			w32.SetWindowPos(
 				window, 0,
@@ -290,11 +262,12 @@ func main() {
 			)
 		}
 
-		labelH := 25
-		buttonW, buttonH := 110, 30
+		labelH := round(float64(fontSize) * 1.3)
+		editH := labelH
+		buttonW, buttonH := labelH*3, labelH+5
 		margin := 10
 		col0x := margin
-		col0w := 300
+		col0w := max(300, 2*buttonW+10)
 		col1x := col0x + col0w + margin
 		col1w := width - col1x - margin
 		row0y := margin
@@ -305,7 +278,6 @@ func main() {
 		projectsH := height - 2*margin - buttonH - projectsY
 		newButtonY := projectsY + projectsH + margin
 		startButtonY := projectsY + projectsH + margin
-		editH := 25
 		inputY := height - margin - editH
 		outputH := 200
 		outputY := inputY - margin - outputH
@@ -323,12 +295,6 @@ func main() {
 
 		w32.InvalidateRect(window, nil, true)
 	}
-
-	r, err := w32.GetClientRect(window)
-	if err != nil {
-		return err
-	}
-	resize(int(r.Right-r.Left), int(r.Bottom-r.Top))
 
 	currentProjectName := func() string {
 		// TODO Read projects tree, use selected thingy.
@@ -402,12 +368,12 @@ func main() {
 				init := exec.CommandContext(ctx, "go", "mod", "init", projectName)
 				init.Dir = projectPath
 				output, err := init.CombinedOutput()
+				if isDone(ctx) {
+					return
+				}
 				if err != nil {
 					fmt.Fprintf(outputBuf,
 						"go mod init failed: %s\r\n%s\r\n", err, output)
-					return
-				}
-				if isDone(ctx) {
 					return
 				}
 			}
@@ -416,24 +382,24 @@ func main() {
 			tidy := exec.CommandContext(ctx, "go", "mod", "tidy")
 			tidy.Dir = projectPath
 			output, err := tidy.CombinedOutput()
+			if isDone(ctx) {
+				return
+			}
 			if err != nil {
 				fmt.Fprintf(outputBuf,
 					"go mod tidy failed: %s\r\n%s\r\n", err, output)
-				return
-			}
-			if isDone(ctx) {
 				return
 			}
 
 			build := exec.CommandContext(ctx, "go", "build", "-o", exeFilePath, ".")
 			build.Dir = projectPath
 			output, err = build.CombinedOutput()
+			if isDone(ctx) {
+				return
+			}
 			if err != nil {
 				fmt.Fprintf(outputBuf,
 					"go build failed: %s\r\n%s\r\n", err, output)
-				return
-			}
-			if isDone(ctx) {
 				return
 			}
 
@@ -500,6 +466,68 @@ func main() {
 		}
 	}
 
+	updateFonts := func() error {
+		tahomaDesc := w32.LOGFONT{
+			Height:         -fontSize,
+			Weight:         w32.FW_NORMAL,
+			CharSet:        w32.DEFAULT_CHARSET,
+			OutPrecision:   w32.OUT_CHARACTER_PRECIS,
+			ClipPrecision:  w32.CLIP_CHARACTER_PRECIS,
+			Quality:        w32.DEFAULT_QUALITY,
+			PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
+		}
+		w32.SetString(tahomaDesc.FaceName[:], "Tahoma")
+		tahoma, err := w32.CreateFontIndirect(&tahomaDesc)
+		if err != nil {
+			return err
+		}
+
+		codeFontDesc := w32.LOGFONT{
+			Height:         -fontSize,
+			Weight:         w32.FW_NORMAL,
+			CharSet:        w32.DEFAULT_CHARSET,
+			OutPrecision:   w32.OUT_CHARACTER_PRECIS,
+			ClipPrecision:  w32.CLIP_CHARACTER_PRECIS,
+			Quality:        w32.DEFAULT_QUALITY,
+			PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
+		}
+		w32.SetString(codeFontDesc.FaceName[:], "Courier New")
+		codeFont, err := w32.CreateFontIndirect(&codeFontDesc)
+		if err != nil {
+			return err
+		}
+
+		w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(projects, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(codeEdit, w32.WM_SETFONT, uintptr(codeFont), 1)
+		w32.SendMessage(consoleOutput, w32.WM_SETFONT, uintptr(codeFont), 1)
+		w32.SendMessage(consoleInput, w32.WM_SETFONT, uintptr(codeFont), 1)
+
+		layoutControls()
+
+		return nil
+	}
+
+	incFontSize := func() error {
+		fontSize += 2
+		return updateFonts()
+	}
+
+	decFontSize := func() error {
+		if fontSize > 8 {
+			fontSize -= 2
+			return updateFonts()
+		}
+		return nil
+	}
+
+	if err := updateFonts(); err != nil {
+		return err
+	}
+
 	handleMessage = func(window w32.HWND, message uint32, w, l uintptr) uintptr {
 		switch message {
 		case w32.WM_TIMER:
@@ -516,6 +544,12 @@ func main() {
 			}
 			if high == 1 && l == 0 && low == startButtonShortcutID {
 				onStartButtonClick()
+			}
+			if high == 1 && l == 0 && low == largerFontShortcutID {
+				incFontSize()
+			}
+			if high == 1 && l == 0 && low == smallerFontShortcutID {
+				decFontSize()
 			}
 			return 0
 		case programStartMessage:
@@ -534,9 +568,7 @@ func main() {
 			w32.EnableWindow(consoleInput, false)
 			return 0
 		case w32.WM_SIZE:
-			width := uint16(l & 0xFFFF)
-			height := uint16((l & 0xFFFF0000) >> 16)
-			resize(int(width), int(height))
+			layoutControls()
 			return 0
 		case w32.WM_DESTROY:
 			w32.PostQuitMessage(0)
@@ -552,7 +584,26 @@ func main() {
 			Key:  w32.VK_F9,
 			Cmd:  startButtonShortcutID,
 		},
-		{},
+		{
+			Virt: w32.FVIRTKEY | w32.FCONTROL,
+			Key:  w32.VK_ADD,
+			Cmd:  largerFontShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY | w32.FCONTROL,
+			Key:  w32.VK_OEM_PLUS,
+			Cmd:  largerFontShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY | w32.FCONTROL,
+			Key:  w32.VK_SUBTRACT,
+			Cmd:  smallerFontShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY | w32.FCONTROL,
+			Key:  w32.VK_OEM_MINUS,
+			Cmd:  smallerFontShortcutID,
+		},
 	})
 	if err != nil {
 		return err
@@ -680,4 +731,18 @@ func hideConsoleWindow() {
 	if w32.GetCurrentProcessId() == consoleProcID {
 		w32.ShowWindowAsync(console, w32.SW_HIDE)
 	}
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func round(x float64) int {
+	if x < 0 {
+		return int(x - 0.5)
+	}
+	return int(x + 0.5)
 }
