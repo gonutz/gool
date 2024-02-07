@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +42,12 @@ const (
 	programStopMessage
 )
 
-var fontSize int32 = 17
+var fontSize float64 = 17
+
+const (
+	minFontSize = 8
+	maxFontSize = 1000
+)
 
 func run() error {
 	runtime.LockOSThread()
@@ -263,7 +269,7 @@ func main() {
 			)
 		}
 
-		labelH := round(float64(fontSize) * 1.3)
+		labelH := round(fontSize * 1.3)
 		editH := labelH
 		buttonW, buttonH := labelH*3, labelH+5
 		margin := 10
@@ -484,8 +490,16 @@ func main() {
 	}
 
 	updateFonts := func() error {
+		if fontSize < minFontSize {
+			fontSize = minFontSize
+		}
+		if fontSize > maxFontSize {
+			fontSize = maxFontSize
+		}
+
+		fontHeight := int32(round(-fontSize))
 		tahomaDesc := w32.LOGFONT{
-			Height:         -fontSize,
+			Height:         fontHeight,
 			Weight:         w32.FW_NORMAL,
 			CharSet:        w32.DEFAULT_CHARSET,
 			OutPrecision:   w32.OUT_CHARACTER_PRECIS,
@@ -500,7 +514,7 @@ func main() {
 		}
 
 		codeFontDesc := w32.LOGFONT{
-			Height:         -fontSize,
+			Height:         fontHeight,
 			Weight:         w32.FW_NORMAL,
 			CharSet:        w32.DEFAULT_CHARSET,
 			OutPrecision:   w32.OUT_CHARACTER_PRECIS,
@@ -534,11 +548,8 @@ func main() {
 	}
 
 	decFontSize := func() error {
-		if fontSize > 8 {
-			fontSize -= 2
-			return updateFonts()
-		}
-		return nil
+		fontSize -= 2
+		return updateFonts()
 	}
 
 	if err := updateFonts(); err != nil {
@@ -590,6 +601,15 @@ func main() {
 			w32.SetWindowText(startButton, w32.String("Start"))
 			w32.SetFocus(codeEdit)
 			w32.EnableWindow(consoleInput, false)
+			return 0
+		case w32.WM_MOUSEWHEEL:
+			delta := int16((w & 0xFFFF0000) >> 16)
+			flags := w & 0xFFFF
+			if flags == w32.MK_CONTROL {
+				d := float64(delta) / 120.0
+				fontSize *= math.Pow(1.1, d)
+				updateFonts()
+			}
 			return 0
 		case w32.WM_SIZE:
 			layoutControls()
