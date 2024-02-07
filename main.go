@@ -158,7 +158,8 @@ func run() error {
 		0,
 		w32.String("BUTTON"),
 		w32.String("Neu"),
-		w32.WS_VISIBLE|w32.WS_CHILD,
+		// TODO Enable this, once it works.
+		w32.WS_VISIBLE|w32.WS_CHILD|w32.WS_DISABLED,
 		10, 300, 80, 25,
 		window,
 		newButtonID, 0, nil,
@@ -296,6 +297,15 @@ func main() {
 		w32.InvalidateRect(window, nil, true)
 	}
 
+	projectsDir := func() (string, error) {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+
+		return filepath.Join(filepath.Dir(exe), "gool_projects"), nil
+	}
+
 	currentProjectName := func() string {
 		// TODO Read projects tree, use selected thingy.
 		return "hello_world"
@@ -304,6 +314,14 @@ func main() {
 	currentFileName := func() string {
 		// TODO Read projects tree, use selected thingy.
 		return "main.go"
+	}
+
+	currentFilePath := func() string {
+		dir, err := projectsDir()
+		if err != nil {
+			return "" // TODO
+		}
+		return filepath.Join(dir, currentProjectName(), currentFileName())
 	}
 
 	outputBuf := newSyncBuffer()
@@ -337,14 +355,13 @@ func main() {
 				return
 			}
 
-			exe, err := os.Executable()
+			projectsPath, err := projectsDir()
 			if err != nil {
 				fmt.Fprintf(outputBuf,
-					"Unable to read executable path: %s\r\n", err)
+					"Unable to read projects path: %s\r\n", err)
 				return
 			}
 
-			projectsPath := filepath.Join(filepath.Dir(exe), "gool_projects")
 			projectName := currentProjectName()
 			projectPath := filepath.Join(projectsPath, projectName)
 
@@ -526,6 +543,13 @@ func main() {
 
 	if err := updateFonts(); err != nil {
 		return err
+	}
+
+	if data, err := os.ReadFile(currentFilePath()); err == nil {
+		code := string(data)
+		code = strings.ReplaceAll(code, "\r", "")
+		code = strings.ReplaceAll(code, "\n", "\r\n")
+		w32.SetWindowText(codeEdit, w32.String(code))
 	}
 
 	handleMessage = func(window w32.HWND, message uint32, w, l uintptr) uintptr {
