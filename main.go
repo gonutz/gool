@@ -223,8 +223,6 @@ func main() {
 	if err != nil {
 		return err
 	}
-	tabWidth := 4 * 4
-	w32.SendMessage(codeEdit, w32.EM_SETTABSTOPS, 1, uintptr(unsafe.Pointer(&tabWidth)))
 	w32.SetFocus(codeEdit)
 
 	consoleOutput, err := w32.CreateWindowEx(
@@ -536,6 +534,9 @@ func main() {
 		w32.SendMessage(codeEdit, w32.WM_SETFONT, uintptr(codeFont), 1)
 		w32.SendMessage(consoleOutput, w32.WM_SETFONT, uintptr(codeFont), 1)
 		w32.SendMessage(consoleInput, w32.WM_SETFONT, uintptr(codeFont), 1)
+
+		tabWidth := 4 * 4
+		w32.SendMessage(codeEdit, w32.EM_SETTABSTOPS, 1, uintptr(unsafe.Pointer(&tabWidth)))
 
 		layoutControls()
 
