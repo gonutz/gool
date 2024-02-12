@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -35,6 +36,7 @@ const (
 	largerFontShortcutID
 	smallerFontShortcutID
 	programTimerID
+	scrollCheckTimerID
 )
 
 const (
@@ -54,6 +56,10 @@ func run() error {
 	defer runtime.UnlockOSThread()
 
 	hideConsoleWindow()
+
+	var labelFont, codeFont w32.HFONT
+	lastLineCount := -1
+	var lastTopCodeLine int32 = -1
 
 	if err := setManifest(); err != nil {
 		return err
@@ -224,11 +230,26 @@ func main() {
 		return err
 	}
 	w32.SetFocus(codeEdit)
+	w32.Edit_LimitText(codeEdit, 0x7FFFFFFF)
+
+	lineNumbers, err := w32.CreateWindowEx(
+		0,
+		w32.String("EDIT"),
+		w32.String(numberRange(1, 1)),
+		w32.WS_VISIBLE|w32.WS_CHILD|w32.ES_MULTILINE|w32.WS_DISABLED|
+			w32.ES_AUTOHSCROLL|w32.ES_RIGHT,
+		210, 40, 10, 300,
+		window,
+		0, 0, nil,
+	)
+	if err != nil {
+		return err
+	}
 
 	consoleOutput, err := w32.CreateWindowEx(
 		w32.WS_EX_CLIENTEDGE,
 		w32.String("EDIT"),
-		w32.String("Console output..."),
+		w32.String("Programm-Output..."),
 		w32.WS_VISIBLE|w32.WS_CHILD|w32.ES_MULTILINE|w32.ES_WANTRETURN|w32.ES_READONLY|
 			w32.WS_HSCROLL|w32.ES_AUTOHSCROLL|w32.WS_VSCROLL|w32.ES_AUTOVSCROLL,
 		220, 320, 300, 100,
@@ -242,7 +263,7 @@ func main() {
 	consoleInput, err := w32.CreateWindowEx(
 		w32.WS_EX_CLIENTEDGE,
 		w32.String("EDIT"),
-		nil,
+		w32.String("Programm-Input"),
 		w32.WS_VISIBLE|w32.WS_CHILD|w32.WS_DISABLED,
 		220, 430, 300, 25,
 		window,
@@ -250,6 +271,41 @@ func main() {
 	)
 	if err != nil {
 		return err
+	}
+	w32.SendMessage(
+		consoleInput,
+		w32.EM_SETCUEBANNER,
+		w32.TRUE,
+		uintptr(unsafe.Pointer(w32.String("Programm-Input..."))),
+	)
+
+	// We might need to sync our line numbers with the code when:
+	// - the user scrolls the code
+	// - the code changes
+	// - the font size changes
+	// - the window size changes
+	// Note that we do not always need to update the line numbers. For example,
+	// when the code changes, we only need to update it when the top-most
+	// visible line number changes or when the line count changes and we are
+	// scrolled down to the bottom of the code.
+	// Doing all these checks is too much code, though, so we take some
+	// shortcuts.
+	updateLineNumbers := func() {
+		topLine := w32.Edit_GetFirstVisibleLine(codeEdit)
+		r, _ := w32.GetWindowRect(lineNumbers)
+		// bottomLine is the maximum visible line at the bottom. The font size
+		// in pixels is actually larger than fontSize so this overshoots by a
+		// couple of lines. This is fine, a couple extra lines outside the
+		// visible area do not hurt. +1 for very large fonts.
+		bottomLine := topLine + (r.Bottom-r.Top)/int32(fontSize) + 1
+		lineCount := int32(w32.Edit_GetLineCount(codeEdit))
+		if lineCount < bottomLine {
+			bottomLine = lineCount
+		}
+		w32.SetWindowText(
+			lineNumbers,
+			w32.String(numberRange(int(topLine)+1, int(bottomLine))),
+		)
 	}
 
 	layoutControls := func() {
@@ -265,6 +321,17 @@ func main() {
 				int32(x), int32(y), int32(width), int32(height),
 				w32.SWP_NOOWNERZORDER|w32.SWP_NOZORDER,
 			)
+		}
+
+		numberW := 50
+		if dc, err := w32.GetDC(lineNumbers); err == nil {
+			w32.SelectObject(dc, w32.HGDIOBJ(codeFont))
+			lineCount := w32.Edit_GetLineCount(codeEdit)
+			n := strconv.Itoa(int(lineCount))
+			if size, err := w32.GetTextExtentPoint32(dc, w32.String(n)); err == nil {
+				numberW = int(size.Cx) * 3 / 2
+			}
+			w32.ReleaseDC(lineNumbers, dc)
 		}
 
 		labelH := round(fontSize * 1.3)
@@ -288,15 +355,20 @@ func main() {
 		outputY := inputY - margin - outputH
 		codeY := row1y
 		codeH := outputY - margin - codeY
+		codeEditX := col1x + numberW + 1
+		codeEditW := col1w - numberW - 1
+		scrollBarH, _ := w32.GetSystemMetrics(w32.SM_CYHSCROLL)
 
 		setPos(projectsCaption, col0x, row0y, col0w, labelH)
 		setPos(projects, col0x, projectsY, col0w, projectsH)
 		setPos(newButton, newButtonX, newButtonY, buttonW, buttonH)
 		setPos(startButton, startButtonX, startButtonY, buttonW, buttonH)
-		setPos(codeCaption, col1x, row0y, col1w, labelH)
-		setPos(codeEdit, col1x, codeY, col1w, codeH)
+		setPos(codeCaption, codeEditX, row0y, col1w, labelH)
+		setPos(lineNumbers, col1x, codeY+3, numberW, codeH-int(scrollBarH)-6)
+		setPos(codeEdit, codeEditX, codeY, codeEditW, codeH)
 		setPos(consoleOutput, col1x, outputY, col1w, outputH)
 		setPos(consoleInput, col1x, inputY, col1w, editH)
+		updateLineNumbers()
 
 		w32.InvalidateRect(window, nil, true)
 	}
@@ -506,7 +578,7 @@ func main() {
 			PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
 		}
 		w32.SetString(tahomaDesc.FaceName[:], "Tahoma")
-		tahoma, err := w32.CreateFontIndirect(&tahomaDesc)
+		labelFont, err = w32.CreateFontIndirect(&tahomaDesc)
 		if err != nil {
 			return err
 		}
@@ -521,17 +593,18 @@ func main() {
 			PitchAndFamily: w32.DEFAULT_PITCH | w32.FF_DONTCARE,
 		}
 		w32.SetString(codeFontDesc.FaceName[:], "Courier New")
-		codeFont, err := w32.CreateFontIndirect(&codeFontDesc)
+		codeFont, err = w32.CreateFontIndirect(&codeFontDesc)
 		if err != nil {
 			return err
 		}
 
-		w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
-		w32.SendMessage(projects, w32.WM_SETFONT, uintptr(tahoma), 1)
-		w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(tahoma), 1)
-		w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(tahoma), 1)
-		w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(tahoma), 1)
+		w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
+		w32.SendMessage(projects, w32.WM_SETFONT, uintptr(labelFont), 1)
+		w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(labelFont), 1)
+		w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(labelFont), 1)
+		w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(codeEdit, w32.WM_SETFONT, uintptr(codeFont), 1)
+		w32.SendMessage(lineNumbers, w32.WM_SETFONT, uintptr(codeFont), 1)
 		w32.SendMessage(consoleOutput, w32.WM_SETFONT, uintptr(codeFont), 1)
 		w32.SendMessage(consoleInput, w32.WM_SETFONT, uintptr(codeFont), 1)
 
@@ -562,32 +635,70 @@ func main() {
 		code = strings.ReplaceAll(code, "\r", "")
 		code = strings.ReplaceAll(code, "\n", "\r\n")
 		w32.SetWindowText(codeEdit, w32.String(code))
+		layoutControls()
 	}
 
 	handleMessage = func(window w32.HWND, message uint32, w, l uintptr) uintptr {
 		switch message {
 		case w32.WM_TIMER:
-			readConsoleOutput()
+			switch w {
+			case programTimerID:
+				readConsoleOutput()
+			case scrollCheckTimerID:
+				topCodeLine := w32.Edit_GetFirstVisibleLine(codeEdit)
+				if topCodeLine != lastTopCodeLine {
+					lastTopCodeLine = topCodeLine
+					updateLineNumbers()
+				}
+				if w32.GetAsyncKeyState(w32.VK_LBUTTON)&0x8000 == 0 {
+					w32.KillTimer(window, scrollCheckTimerID)
+				}
+			}
 			return 0
 		case w32.WM_COMMAND:
-			low := w & 0xFFFF
-			high := (w & 0xFFFF0000) >> 16
-			if low == startButtonID && l == uintptr(startButton) {
+			lowW := w & 0xFFFF
+			highW := (w & 0xFFFF0000) >> 16
+			if lowW == startButtonID && l == uintptr(startButton) {
 				onStartButtonClick()
 			}
-			if low == newButtonID && l == uintptr(newButton) {
+			if lowW == newButtonID && l == uintptr(newButton) {
 				onNewButtonClick()
 			}
-			if high == 1 && l == 0 && low == startButtonShortcutID {
+			if highW == 1 && l == 0 && lowW == startButtonShortcutID {
 				onStartButtonClick()
 			}
-			if high == 1 && l == 0 && low == largerFontShortcutID {
+			if highW == 1 && l == 0 && lowW == largerFontShortcutID {
 				incFontSize()
 			}
-			if high == 1 && l == 0 && low == smallerFontShortcutID {
+			if highW == 1 && l == 0 && lowW == smallerFontShortcutID {
 				decFontSize()
 			}
+			if highW == w32.EN_VSCROLL && l == uintptr(codeEdit) {
+				updateLineNumbers()
+			}
+			if highW == w32.EN_CHANGE && l == uintptr(codeEdit) {
+				lineCount := int(w32.Edit_GetLineCount(codeEdit))
+				if len(strconv.Itoa(lineCount)) != len(strconv.Itoa(lastLineCount)) {
+					layoutControls()
+					lastLineCount = lineCount
+				}
+			}
 			return 0
+		case w32.WM_PARENTNOTIFY:
+			if w&0xFFFF == w32.WM_LBUTTONDOWN {
+				r, _ := w32.GetWindowRect(codeEdit)
+				offset, _ := w32.ClientToScreen(window, w32.POINT{})
+				x := int32(int16(l&0xFFFF)) + offset.X
+				y := int32(int16((l&0xFFFF0000)>>16)) + offset.Y
+				scrollBarW, _ := w32.GetSystemMetrics(w32.SM_CXHSCROLL)
+				left := r.Right - scrollBarW - 3 // -3 to be safe.
+				if left <= x && x < r.Right &&
+					r.Top <= y && y < r.Bottom {
+					lastTopCodeLine = w32.Edit_GetFirstVisibleLine(codeEdit)
+					w32.SetTimer(window, scrollCheckTimerID, 10, 0)
+				}
+			}
+			return w32.DefWindowProc(window, message, w, l)
 		case programStartMessage:
 			w32.SetWindowText(startButton, w32.String("Stopp"))
 			w32.SetWindowText(consoleOutput, nil)
@@ -602,6 +713,7 @@ func main() {
 			w32.SetWindowText(startButton, w32.String("Start"))
 			w32.SetFocus(codeEdit)
 			w32.EnableWindow(consoleInput, false)
+			w32.SetWindowText(consoleInput, w32.String("Programm-Input"))
 			return 0
 		case w32.WM_MOUSEWHEEL:
 			delta := int16((w & 0xFFFF0000) >> 16)
@@ -790,4 +902,12 @@ func round(x float64) int {
 		return int(x - 0.5)
 	}
 	return int(x + 0.5)
+}
+
+func numberRange(from, to int) string {
+	var s string
+	for i := from; i <= to; i++ {
+		s += strconv.Itoa(i) + "\r\n"
+	}
+	return s
 }
