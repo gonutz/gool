@@ -24,6 +24,12 @@ import (
 
 func main() {
 	if err := run(); err != nil {
+		w32.MessageBox(
+			0,
+			w32.String(err.Error()),
+			w32.String("Error"),
+			w32.MB_ICONERROR|w32.MB_OK|w32.MB_TOPMOST,
+		)
 		panic(err)
 	}
 }
@@ -32,6 +38,7 @@ const (
 	projectsID = 1 + iota
 	newButtonID
 	startButtonID
+	refreshShortcutID
 	startButtonShortcutID
 	largerFontShortcutID
 	smallerFontShortcutID
@@ -57,9 +64,45 @@ func run() error {
 
 	hideConsoleWindow()
 
-	var labelFont, codeFont w32.HFONT
-	lastLineCount := -1
-	var lastTopCodeLine int32 = -1
+	var (
+		programMu       sync.Mutex
+		programRunning  bool
+		stopProgram     = func() {}
+		programStdin    io.WriteCloser
+		openFilePath    string
+		labelFont       w32.HFONT
+		codeFont        w32.HFONT
+		lastLineCount         = -1
+		lastTopCodeLine int32 = -1
+	)
+
+	projectsDir := func() (string, error) {
+		exe, err := os.Executable()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(filepath.Dir(exe), "gool_projects"), nil
+	}
+
+	if root, err := projectsDir(); err != nil {
+		return err
+	} else {
+		os.MkdirAll(root, 0666)
+		// Create a hello world if there is none.
+		os.MkdirAll(filepath.Join(root, "hello_world"), 0666)
+		hello := filepath.Join(root, "hello_world", "main.go")
+		if !fileExists(hello) {
+			code := `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello World!")
+}
+`
+			os.WriteFile(hello, []byte(code), 0666)
+		}
+	}
 
 	if err := setManifest(); err != nil {
 		return err
@@ -153,12 +196,13 @@ func run() error {
 		return err
 	}
 
-	projects, err := w32.CreateWindowEx(
+	projectTree, err := w32.CreateWindowEx(
 		0,
 		w32.WC_TREEVIEW,
 		nil,
 		w32.WS_VISIBLE|w32.WS_CHILD|w32.WS_BORDER|
-			w32.TVS_HASLINES|w32.TVS_HASBUTTONS|w32.TVS_LINESATROOT,
+			w32.TVS_HASLINES|w32.TVS_HASBUTTONS|w32.TVS_LINESATROOT|
+			w32.TVS_SHOWSELALWAYS,
 		10, 40, 200, 200,
 		window,
 		projectsID,
@@ -184,7 +228,7 @@ func run() error {
 		0,
 		w32.String("BUTTON"),
 		w32.String("Start"),
-		w32.WS_VISIBLE|w32.WS_CHILD,
+		w32.WS_VISIBLE|w32.WS_CHILD|w32.WS_DISABLED,
 		10, 330, 80, 25,
 		window,
 		startButtonID, 0, nil,
@@ -206,22 +250,13 @@ func run() error {
 		return err
 	}
 
-	helloWordCode := strings.ReplaceAll(strings.TrimSpace(`
-package main
-
-import "fmt"
-
-func main() {
-	fmt.Println("Hello World!")
-}
-`), "\n", "\r\n")
-
 	codeEdit, err := w32.CreateWindowEx(
 		w32.WS_EX_CLIENTEDGE,
 		w32.String("EDIT"),
-		w32.String(helloWordCode),
+		nil,
 		w32.WS_VISIBLE|w32.WS_CHILD|w32.ES_MULTILINE|w32.ES_WANTRETURN|
-			w32.WS_HSCROLL|w32.ES_AUTOHSCROLL|w32.WS_VSCROLL|w32.ES_AUTOVSCROLL,
+			w32.WS_HSCROLL|w32.ES_AUTOHSCROLL|w32.WS_VSCROLL|w32.ES_AUTOVSCROLL|
+			w32.WS_DISABLED,
 		220, 40, 300, 300,
 		window,
 		0, 0, nil,
@@ -236,7 +271,7 @@ func main() {
 		0,
 		w32.String("EDIT"),
 		w32.String(numberRange(1, 1)),
-		w32.WS_VISIBLE|w32.WS_CHILD|w32.ES_MULTILINE|w32.WS_DISABLED|
+		w32.WS_CHILD|w32.ES_MULTILINE|w32.WS_DISABLED|
 			w32.ES_AUTOHSCROLL|w32.ES_RIGHT,
 		210, 40, 10, 300,
 		window,
@@ -360,7 +395,7 @@ func main() {
 		scrollBarH, _ := w32.GetSystemMetrics(w32.SM_CYHSCROLL)
 
 		setPos(projectsCaption, col0x, row0y, col0w, labelH)
-		setPos(projects, col0x, projectsY, col0w, projectsH)
+		setPos(projectTree, col0x, projectsY, col0w, projectsH)
 		setPos(newButton, newButtonX, newButtonY, buttonW, buttonH)
 		setPos(startButton, startButtonX, startButtonY, buttonW, buttonH)
 		setPos(codeCaption, codeEditX, row0y, col1w, labelH)
@@ -373,43 +408,16 @@ func main() {
 		w32.InvalidateRect(window, nil, true)
 	}
 
-	projectsDir := func() (string, error) {
-		exe, err := os.Executable()
-		if err != nil {
-			return "", err
-		}
-
-		return filepath.Join(filepath.Dir(exe), "gool_projects"), nil
-	}
-
-	currentProjectName := func() string {
-		// TODO Read projects tree, use selected thingy.
-		return "hello_world"
-	}
-
-	currentFileName := func() string {
-		// TODO Read projects tree, use selected thingy.
-		return "main.go"
-	}
-
-	currentFilePath := func() string {
-		dir, err := projectsDir()
-		if err != nil {
-			return "" // TODO
-		}
-		return filepath.Join(dir, currentProjectName(), currentFileName())
-	}
-
 	outputBuf := newSyncBuffer()
 
-	var (
-		programMu      sync.Mutex
-		programRunning bool
-		stopProgram    = func() {}
-		programStdin   io.WriteCloser
-	)
-
 	startProgram := func() {
+		if openFilePath == "" {
+			return
+		}
+
+		// TODO This function might create new files, like go.mod, so update
+		// the file tree afterwards.
+
 		programRunning = true
 		w32.SendMessage(window, programStartMessage, 0, 0)
 
@@ -438,19 +446,17 @@ func main() {
 				return
 			}
 
-			projectName := currentProjectName()
+			openFileFolder, _ := filepath.Split(openFilePath)
+			projectName := filepath.Base(openFileFolder)
 			projectPath := filepath.Join(projectsPath, projectName)
-
-			os.MkdirAll(projectPath, 0666) // Ignore errors on purpose.
 
 			if isDone(ctx) {
 				return
 			}
 
-			goFilePath := filepath.Join(projectPath, currentFileName())
-			if err := os.WriteFile(goFilePath, []byte(code), 0666); err != nil {
+			if err := os.WriteFile(openFilePath, []byte(code), 0666); err != nil {
 				fmt.Fprintf(outputBuf,
-					"Unable to write file '%s': %s\r\n", goFilePath, err)
+					"Unable to write file '%s': %s\r\n", openFilePath, err)
 				return
 			}
 
@@ -599,7 +605,7 @@ func main() {
 		}
 
 		w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
-		w32.SendMessage(projects, w32.WM_SETFONT, uintptr(labelFont), 1)
+		w32.SendMessage(projectTree, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
@@ -630,12 +636,87 @@ func main() {
 		return err
 	}
 
-	if data, err := os.ReadFile(currentFilePath()); err == nil {
+	openFile := func(path string) error {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+
+		openFilePath = path
+
 		code := string(data)
 		code = strings.ReplaceAll(code, "\r", "")
 		code = strings.ReplaceAll(code, "\n", "\r\n")
+		w32.ShowWindow(lineNumbers, w32.SW_SHOW)
+		w32.EnableWindow(codeEdit, true)
+		w32.EnableWindow(startButton, true)
 		w32.SetWindowText(codeEdit, w32.String(code))
+		w32.SetWindowText(window, w32.String("Gool - "+path))
 		layoutControls()
+
+		return nil
+	}
+
+	var fillTree func(parent, prev w32.HTREEITEM, f *folder, itemToPath map[w32.HTREEITEM]string) error
+	fillTree = func(parent, prev w32.HTREEITEM, f *folder, itemToPath map[w32.HTREEITEM]string) error {
+		for _, folder := range f.folders {
+			var err error
+			prev, err = w32.TreeView_InsertItem(projectTree, &w32.TVINSERTSTRUCT{
+				Parent:      parent,
+				InsertAfter: prev,
+				ItemEx: w32.TVITEMEX{
+					Mask: w32.TVIF_TEXT,
+					Text: w32.String(filepath.Base(folder.path)),
+				},
+			})
+			if err != nil {
+				return err
+			}
+
+			if err := fillTree(prev, w32.TVI_ROOT, folder, itemToPath); err != nil {
+				return err
+			}
+		}
+
+		for _, file := range f.files {
+			var err error
+			prev, err = w32.TreeView_InsertItem(projectTree, &w32.TVINSERTSTRUCT{
+				Parent:      parent,
+				InsertAfter: prev,
+				ItemEx: w32.TVITEMEX{
+					Mask: w32.TVIF_TEXT,
+					Text: w32.String(filepath.Base(file)),
+				},
+			})
+			if err != nil {
+				return err
+			}
+			itemToPath[prev] = file
+		}
+
+		return nil
+	}
+
+	fileTreeItemToPath := map[w32.HTREEITEM]string{}
+
+	updateProjects := func() error {
+		projects, err := projectsDir()
+		if err != nil {
+			return err
+		}
+
+		tree, err := readProjectTree(projects)
+		if err != nil {
+			return err
+		}
+
+		w32.TreeView_DeleteAllItems(projectTree)
+		fileTreeItemToPath = map[w32.HTREEITEM]string{}
+		return fillTree(0, w32.TVI_ROOT, tree, fileTreeItemToPath)
+	}
+
+	if err := updateProjects(); err != nil {
+		return err
 	}
 
 	handleMessage = func(window w32.HWND, message uint32, w, l uintptr) uintptr {
@@ -666,6 +747,9 @@ func main() {
 			}
 			if highW == 1 && l == 0 && lowW == startButtonShortcutID {
 				onStartButtonClick()
+			}
+			if highW == 1 && l == 0 && lowW == refreshShortcutID {
+				updateProjects()
 			}
 			if highW == 1 && l == 0 && lowW == largerFontShortcutID {
 				incFontSize()
@@ -727,6 +811,33 @@ func main() {
 		case w32.WM_SIZE:
 			layoutControls()
 			return 0
+		case w32.WM_ACTIVATE:
+			if w&0xFFFF != w32.WA_INACTIVE {
+				// TODO Update the file tree in a diff way, do not delete and
+				// re-create everything, because it will collapse all nodes and
+				// unselect the last selection.
+				// updateProjects()
+			}
+			return 0
+		case w32.WM_NOTIFY:
+			header := *(*w32.NMHDR)(unsafe.Pointer(l))
+			if header.Code == w32.NM_DBLCLK {
+				item := w32.TreeView_GetSelection(projectTree)
+				path := fileTreeItemToPath[item]
+				if strings.HasSuffix(strings.ToLower(path), ".go") {
+					if err := openFile(path); err != nil {
+						w32.MessageBox(
+							0,
+							w32.String(err.Error()),
+							w32.String("Error"),
+							w32.MB_ICONERROR|w32.MB_OK|w32.MB_TOPMOST,
+						)
+					}
+				} else if path != "" {
+					exec.Command("cmd", "/C", "start", path).Start()
+				}
+			}
+			return 0
 		case w32.WM_DESTROY:
 			w32.PostQuitMessage(0)
 			return 0
@@ -736,6 +847,11 @@ func main() {
 	}
 
 	shortcuts, err := w32.CreateAcceleratorTable([]w32.ACCEL{
+		{
+			Virt: w32.FVIRTKEY,
+			Key:  w32.VK_F5,
+			Cmd:  refreshShortcutID,
+		},
 		{
 			Virt: w32.FVIRTKEY,
 			Key:  w32.VK_F9,
@@ -910,4 +1026,48 @@ func numberRange(from, to int) string {
 		s += strconv.Itoa(i) + "\r\n"
 	}
 	return s
+}
+
+func readProjectTree(root string) (*folder, error) {
+	folder, err := readFolder(root)
+	if err != nil {
+		return nil, err
+	}
+	// For the root folder we do not show files.
+	folder.files = nil
+	return folder, nil
+}
+
+type folder struct {
+	path    string
+	folders []*folder
+	files   []string
+}
+
+func readFolder(path string) (*folder, error) {
+	files, err := os.ReadDir(path)
+	if err != nil {
+		return nil, err
+	}
+
+	folder := &folder{path: path}
+
+	for _, file := range files {
+		if strings.HasPrefix(file.Name(), ".") {
+			continue
+		}
+
+		subPath := filepath.Join(path, file.Name())
+		if file.IsDir() {
+			sub, err := readFolder(subPath)
+			if err != nil {
+				return nil, err
+			}
+			folder.folders = append(folder.folders, sub)
+		} else {
+			folder.files = append(folder.files, subPath)
+		}
+	}
+
+	return folder, nil
 }
