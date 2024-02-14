@@ -762,8 +762,14 @@ func main() {
 			}
 			if highW == w32.EN_CHANGE && l == uintptr(codeEdit) {
 				lineCount := int(w32.Edit_GetLineCount(codeEdit))
-				if len(strconv.Itoa(lineCount)) != len(strconv.Itoa(lastLineCount)) {
-					layoutControls()
+				if lineCount != lastLineCount {
+					if len(strconv.Itoa(lineCount)) != len(strconv.Itoa(lastLineCount)) {
+						// The line numbers have grown or shrunk in size, so we
+						// need to adjust the line number column width.
+						layoutControls()
+					} else {
+						updateLineNumbers()
+					}
 					lastLineCount = lineCount
 				}
 			}
