@@ -42,6 +42,8 @@ const (
 	startButtonShortcutID
 	largerFontShortcutID
 	smallerFontShortcutID
+	fileExplorerShortcutID
+	commandLineShortcutID
 	programTimerID
 	scrollCheckTimerID
 )
@@ -757,6 +759,18 @@ func main() {
 			if highW == 1 && l == 0 && lowW == smallerFontShortcutID {
 				decFontSize()
 			}
+			if openFilePath != "" {
+				if highW == 1 && l == 0 && lowW == fileExplorerShortcutID {
+					exec.Command(
+						"cmd", "/C", "start", filepath.Dir(openFilePath),
+					).Start()
+				}
+				if highW == 1 && l == 0 && lowW == commandLineShortcutID {
+					cmd := exec.Command("cmd", "/C", "start", "/MAX", "cmd")
+					cmd.Dir = filepath.Dir(openFilePath)
+					cmd.Start()
+				}
+			}
 			if highW == w32.EN_VSCROLL && l == uintptr(codeEdit) {
 				updateLineNumbers()
 			}
@@ -862,6 +876,16 @@ func main() {
 			Virt: w32.FVIRTKEY,
 			Key:  w32.VK_F9,
 			Cmd:  startButtonShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY,
+			Key:  w32.VK_F11,
+			Cmd:  fileExplorerShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY,
+			Key:  w32.VK_F12,
+			Cmd:  commandLineShortcutID,
 		},
 		{
 			Virt: w32.FVIRTKEY | w32.FCONTROL,
