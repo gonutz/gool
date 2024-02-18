@@ -760,17 +760,20 @@ func main() {
 			if highW == 1 && l == 0 && lowW == smallerFontShortcutID {
 				decFontSize()
 			}
-			if openFilePath != "" {
-				if highW == 1 && l == 0 && lowW == fileExplorerShortcutID {
-					exec.Command(
-						"cmd", "/C", "start", filepath.Dir(openFilePath),
-					).Start()
+			if highW == 1 && l == 0 && lowW == fileExplorerShortcutID {
+				dir := filepath.Dir(openFilePath)
+				if openFilePath == "" {
+					dir, _ = projectsDir()
 				}
-				if highW == 1 && l == 0 && lowW == commandLineShortcutID {
-					cmd := exec.Command("cmd", "/C", "start", "/MAX", "cmd")
-					cmd.Dir = filepath.Dir(openFilePath)
-					cmd.Start()
+				exec.Command("cmd", "/C", "start", dir).Start()
+			}
+			if highW == 1 && l == 0 && lowW == commandLineShortcutID {
+				cmd := exec.Command("cmd", "/C", "start", "/MAX", "cmd")
+				cmd.Dir = filepath.Dir(openFilePath)
+				if openFilePath == "" {
+					cmd.Dir, _ = projectsDir()
 				}
+				cmd.Start()
 			}
 			if highW == w32.EN_VSCROLL && l == uintptr(codeEdit) {
 				updateLineNumbers()
