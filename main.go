@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -86,6 +87,7 @@ func run() error {
 		return filepath.Join(filepath.Dir(exe), "gool_projects"), nil
 	}
 
+	fileToOpen := ""
 	if root, err := projectsDir(); err != nil {
 		return err
 	} else if !pathExists(root) {
@@ -94,6 +96,7 @@ func run() error {
 		os.MkdirAll(filepath.Join(root, "hello_world"), 0666)
 		hello := filepath.Join(root, "hello_world", "main.go")
 		os.WriteFile(hello, []byte(helloWorldCode), 0666)
+		fileToOpen = hello
 	}
 
 	if err := setManifest(); err != nil {
@@ -712,6 +715,42 @@ func run() error {
 		return err
 	}
 
+	type settings struct {
+		FontSize float64
+		OpenFile string
+	}
+
+	settingsPath := func() string {
+		return filepath.Join(os.Getenv("APPDATA"), "gool.settings")
+	}
+
+	onClose := func() error {
+		s := settings{
+			FontSize: fontSize,
+			OpenFile: openFilePath,
+		}
+		data, err := json.Marshal(s)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(settingsPath(), data, 0666)
+	}
+
+	if fileToOpen != "" {
+		openFile(fileToOpen)
+	}
+
+	if data, err := os.ReadFile(settingsPath()); err == nil {
+		var s settings
+		if json.Unmarshal(data, &s) == nil {
+			fontSize = s.FontSize
+			updateFonts()
+			if pathExists(s.OpenFile) {
+				openFile(s.OpenFile)
+			}
+		}
+	}
+
 	handleMessage = func(window w32.HWND, message uint32, w, l uintptr) uintptr {
 		switch message {
 		case w32.WM_TIMER:
@@ -852,6 +891,9 @@ func run() error {
 				}
 			}
 			return 0
+		case w32.WM_CLOSE:
+			onClose()
+			return w32.DefWindowProc(window, message, w, l)
 		case w32.WM_DESTROY:
 			w32.PostQuitMessage(0)
 			return 0
