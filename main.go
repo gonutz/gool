@@ -88,22 +88,12 @@ func run() error {
 
 	if root, err := projectsDir(); err != nil {
 		return err
-	} else {
+	} else if !pathExists(root) {
+		// Create the projects folder and a hello world project.
 		os.MkdirAll(root, 0666)
-		// Create a hello world if there is none.
 		os.MkdirAll(filepath.Join(root, "hello_world"), 0666)
 		hello := filepath.Join(root, "hello_world", "main.go")
-		if !fileExists(hello) {
-			code := `package main
-
-import "fmt"
-
-func main() {
-	fmt.Println("Hello World!")
-}
-`
-			os.WriteFile(hello, []byte(code), 0666)
-		}
+		os.WriteFile(hello, []byte(helloWorldCode), 0666)
 	}
 
 	if err := setManifest(); err != nil {
@@ -466,7 +456,7 @@ func main() {
 			exeFilePath := filepath.Join(projectPath, projectName+".exe")
 
 			modFilePath := filepath.Join(projectPath, "go.mod")
-			if !fileExists(modFilePath) {
+			if !pathExists(modFilePath) {
 				init := exec.CommandContext(ctx, "go", "mod", "init", projectName)
 				init.Dir = projectPath
 				output, err := init.CombinedOutput()
@@ -975,15 +965,9 @@ func setManifest() error {
 	return err
 }
 
-func fileExists(path string) bool {
-	stat, err := os.Stat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return false
-	}
-	if stat.IsDir() {
-		return false
-	}
-	return true
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return !errors.Is(err, os.ErrNotExist)
 }
 
 func newSyncBuffer() *syncBuffer {
@@ -1105,3 +1089,12 @@ func readFolder(path string) (*folder, error) {
 
 	return folder, nil
 }
+
+const helloWorldCode = `package main
+
+import "fmt"
+
+func main() {
+	fmt.Println("Hello World!")
+}
+`
