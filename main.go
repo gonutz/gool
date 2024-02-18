@@ -456,6 +456,7 @@ func main() {
 				return
 			}
 
+			code = strings.ReplaceAll(code, "\r\n", "\n")
 			if err := os.WriteFile(openFilePath, []byte(code), 0666); err != nil {
 				fmt.Fprintf(outputBuf,
 					"Unable to write file '%s': %s\r\n", openFilePath, err)
