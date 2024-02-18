@@ -394,7 +394,7 @@ func main() {
 		codeH := outputY - margin - codeY
 		codeEditX := col1x + numberW + 1
 		codeEditW := col1w - numberW - 1
-		scrollBarH, _ := w32.GetSystemMetrics(w32.SM_CYHSCROLL)
+		scrollBarH := w32.GetSystemMetrics(w32.SM_CYHSCROLL)
 
 		setPos(projectsCaption, col0x, row0y, col0w, labelH)
 		setPos(projectTree, col0x, projectsY, col0w, projectsH)
@@ -798,7 +798,7 @@ func main() {
 				offset, _ := w32.ClientToScreen(window, w32.POINT{})
 				x := int32(int16(l&0xFFFF)) + offset.X
 				y := int32(int16((l&0xFFFF0000)>>16)) + offset.Y
-				scrollBarW, _ := w32.GetSystemMetrics(w32.SM_CXHSCROLL)
+				scrollBarW := w32.GetSystemMetrics(w32.SM_CXHSCROLL)
 				left := r.Right - scrollBarW - 3 // -3 to be safe.
 				if left <= x && x < r.Right &&
 					r.Top <= y && y < r.Bottom {
