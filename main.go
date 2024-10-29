@@ -169,7 +169,7 @@ func run() error {
 		w32.WS_EX_LAYERED|w32.WS_EX_COMPOSITED,
 		w32.StringAtom(class),
 		w32.String("Gool"),
-		w32.WS_OVERLAPPEDWINDOW|w32.WS_VISIBLE|w32.WS_MAXIMIZE,
+		w32.WS_OVERLAPPEDWINDOW|w32.WS_VISIBLE,
 		w32.CW_USEDEFAULT, w32.CW_USEDEFAULT, w32.CW_USEDEFAULT, w32.CW_USEDEFAULT,
 		0, 0, 0,
 		nil,
@@ -177,6 +177,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
+
+	w32.ShowWindow(window, w32.SW_MAXIMIZE)
 
 	projectsCaption, err := w32.CreateWindowEx(
 		0,
