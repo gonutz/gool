@@ -564,7 +564,23 @@ func run() error {
 					w32.String("Fehler"),
 					w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
 				)
+			} else {
+				w32.MessageBox(
+					window,
+					w32.String("Das Skript wurde erfolgreich ausgeführt."),
+					w32.String("Erfolg"),
+					w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONINFORMATION,
+				)
 			}
+		} else {
+			exe, _ := os.Executable()
+			exePath := filepath.Dir(exe)
+			w32.MessageBox(
+				window,
+				w32.String("Kein Skript 'f4.bat' in '"+exePath+"' gefunden."),
+				w32.String("Fehler"),
+				w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
+			)
 		}
 	}
 
