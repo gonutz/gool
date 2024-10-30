@@ -40,6 +40,7 @@ const (
 	newButtonID
 	startButtonID
 	refreshShortcutID
+	synchCodeWithRepoID
 	startButtonShortcutID
 	largerFontShortcutID
 	smallerFontShortcutID
@@ -516,6 +517,59 @@ func run() error {
 		}(ctx)
 	}
 
+	readCodeFromRepo := func() (string, error) {
+		const gitURL = `https://github.com/gonutz/gool_exchange.git`
+
+		tempDir, err := ioutil.TempDir("", "gool_exchange_*")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(tempDir)
+
+		output, err := exec.Command("git", "clone", gitURL, tempDir).CombinedOutput()
+		if err != nil {
+			return "", fmt.Errorf(err.Error() + ": " + string(output))
+		}
+
+		content, err := os.ReadFile(filepath.Join(tempDir, "main.go"))
+		if err != nil {
+			return "", err
+		}
+
+		code := string(content)
+		code = strings.ReplaceAll(code, "\n", "\r\n")
+		return code, nil
+	}
+
+	synchCodeWithRepo := func() {
+		if answer, err := w32.MessageBox(
+			window,
+			w32.String("Soll der Code mit der Online-Version synchronisiert werden?"),
+			w32.String("Sicher?"),
+			w32.MB_YESNO|w32.MB_TOPMOST|w32.MB_ICONQUESTION,
+		); err != nil || answer != w32.IDYES {
+			return
+		}
+
+		code, err := readCodeFromRepo()
+		if err != nil {
+			w32.MessageBox(
+				window,
+				w32.String(err.Error()),
+				w32.String("Synchronisation fehlgeschlagen"),
+				w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
+			)
+		} else {
+			w32.SetWindowText(codeEdit, w32.String(code))
+			w32.MessageBox(
+				window,
+				w32.String("Der Code wurde synchronisiert."),
+				w32.String("Synchronisation erfolgreich"),
+				w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONINFORMATION,
+			)
+		}
+	}
+
 	onStartButtonClick := func() {
 		programMu.Lock()
 		defer programMu.Unlock()
@@ -779,6 +833,9 @@ func run() error {
 			if lowW == newButtonID && l == uintptr(newButton) {
 				onNewButtonClick()
 			}
+			if highW == 1 && l == 0 && lowW == synchCodeWithRepoID {
+				synchCodeWithRepo()
+			}
 			if highW == 1 && l == 0 && lowW == startButtonShortcutID {
 				onStartButtonClick()
 			}
@@ -909,6 +966,11 @@ func run() error {
 			Virt: w32.FVIRTKEY,
 			Key:  w32.VK_F5,
 			Cmd:  refreshShortcutID,
+		},
+		{
+			Virt: w32.FVIRTKEY,
+			Key:  w32.VK_F2,
+			Cmd:  synchCodeWithRepoID,
 		},
 		{
 			Virt: w32.FVIRTKEY,
