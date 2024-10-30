@@ -40,6 +40,7 @@ const (
 	startButtonID
 	refreshShortcutID
 	synchCodeWithRepoID
+	f4KeyID
 	startButtonShortcutID
 	largerFontShortcutID
 	smallerFontShortcutID
@@ -552,6 +553,21 @@ func run() error {
 		}
 	}
 
+	runF4script := func() {
+		if fileExists("./f4.bat") {
+			output, err := exec.Command("cmd", "/C", "f4.bat").CombinedOutput()
+			if err != nil {
+				msg := err.Error() + ": " + string(output)
+				w32.MessageBox(
+					window,
+					w32.String(msg),
+					w32.String("Fehler"),
+					w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
+				)
+			}
+		}
+	}
+
 	onStartButtonClick := func() {
 		programMu.Lock()
 		defer programMu.Unlock()
@@ -810,6 +826,9 @@ func run() error {
 			if highW == 1 && l == 0 && lowW == synchCodeWithRepoID {
 				synchCodeWithRepo()
 			}
+			if highW == 1 && l == 0 && lowW == f4KeyID {
+				runF4script()
+			}
 			if highW == 1 && l == 0 && lowW == startButtonShortcutID {
 				onStartButtonClick()
 			}
@@ -945,6 +964,11 @@ func run() error {
 			Virt: w32.FVIRTKEY,
 			Key:  w32.VK_F2,
 			Cmd:  synchCodeWithRepoID,
+		},
+		{
+			Virt: w32.FVIRTKEY,
+			Key:  w32.VK_F4,
+			Cmd:  f4KeyID,
 		},
 		{
 			Virt: w32.FVIRTKEY,
@@ -1178,3 +1202,8 @@ func main() {
 	fmt.Println("Hello World!")
 }
 `
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
+}
