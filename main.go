@@ -554,8 +554,21 @@ func run() error {
 	}
 
 	runF4script := func() {
-		if fileExists("./f4.bat") {
-			output, err := exec.Command("cmd", "/C", "f4.bat").CombinedOutput()
+		exe, err := os.Executable()
+		if err != nil {
+			w32.MessageBox(
+				window,
+				w32.String("os.Executable ist fehlgeschlagen: "+err.Error()),
+				w32.String("Fehler"),
+				w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
+			)
+			return
+		}
+		exePath := filepath.Dir(exe)
+		scriptPath := filepath.Join(exePath, "f4.bat")
+
+		if fileExists(scriptPath) {
+			output, err := exec.Command("cmd", "/C", scriptPath).CombinedOutput()
 			if err != nil {
 				msg := err.Error() + ": " + string(output)
 				w32.MessageBox(
@@ -573,11 +586,9 @@ func run() error {
 				)
 			}
 		} else {
-			exe, _ := os.Executable()
-			exePath := filepath.Dir(exe)
 			w32.MessageBox(
 				window,
-				w32.String("Kein Skript 'f4.bat' in '"+exePath+"' gefunden."),
+				w32.String("Skript '"+scriptPath+"' nicht gefunden."),
 				w32.String("Fehler"),
 				w32.MB_OK|w32.MB_TOPMOST|w32.MB_ICONERROR,
 			)
