@@ -37,7 +37,6 @@ func main() {
 
 const (
 	projectsID = 1 + iota
-	newButtonID
 	startButtonID
 	refreshShortcutID
 	synchCodeWithRepoID
@@ -208,20 +207,6 @@ func run() error {
 		nil,
 	)
 
-	newButton, err := w32.CreateWindowEx(
-		0,
-		w32.String("BUTTON"),
-		w32.String("Neu"),
-		// TODO Enable this, once it works.
-		w32.WS_VISIBLE|w32.WS_CHILD|w32.WS_DISABLED,
-		10, 300, 80, 25,
-		window,
-		newButtonID, 0, nil,
-	)
-	if err != nil {
-		return err
-	}
-
 	startButton, err := w32.CreateWindowEx(
 		0,
 		w32.String("BUTTON"),
@@ -377,11 +362,9 @@ func run() error {
 		col1w := width - col1x - margin
 		row0y := margin
 		row1y := row0y + labelH
-		newButtonX := col0x + (col0w-2*buttonW-margin)/2
-		startButtonX := newButtonX + buttonW + margin
+		startButtonX := col0x + (col0w-buttonW-margin)/2
 		projectsY := row0y + labelH
 		projectsH := height - 2*margin - buttonH - projectsY
-		newButtonY := projectsY + projectsH + margin
 		startButtonY := projectsY + projectsH + margin
 		inputY := height - margin - editH
 		outputH := 200
@@ -394,7 +377,6 @@ func run() error {
 
 		setPos(projectsCaption, col0x, row0y, col0w, labelH)
 		setPos(projectTree, col0x, projectsY, col0w, projectsH)
-		setPos(newButton, newButtonX, newButtonY, buttonW, buttonH)
 		setPos(startButton, startButtonX, startButtonY, buttonW, buttonH)
 		setPos(codeCaption, codeEditX, row0y, col1w, labelH)
 		setPos(lineNumbers, col1x, codeY+3, numberW, codeH-int(scrollBarH)-6)
@@ -581,10 +563,6 @@ func run() error {
 		}
 	}
 
-	onNewButtonClick := func() {
-		// TODO
-	}
-
 	w32.SetWindowSubclass(
 		consoleInput,
 		w32.NewWindowSubclassProc(func(
@@ -658,7 +636,6 @@ func run() error {
 
 		w32.SendMessage(projectsCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(projectTree, w32.WM_SETFONT, uintptr(labelFont), 1)
-		w32.SendMessage(newButton, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(startButton, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(codeCaption, w32.WM_SETFONT, uintptr(labelFont), 1)
 		w32.SendMessage(codeEdit, w32.WM_SETFONT, uintptr(codeFont), 1)
@@ -829,9 +806,6 @@ func run() error {
 			highW := (w & 0xFFFF0000) >> 16
 			if lowW == startButtonID && l == uintptr(startButton) {
 				onStartButtonClick()
-			}
-			if lowW == newButtonID && l == uintptr(newButton) {
-				onNewButtonClick()
 			}
 			if highW == 1 && l == 0 && lowW == synchCodeWithRepoID {
 				synchCodeWithRepo()
